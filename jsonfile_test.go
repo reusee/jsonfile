@@ -21,7 +21,7 @@ func TestGobFile(t *testing.T) {
 	}
 	path := filepath.Join(os.TempDir(), "jsonfile-test-"+strconv.FormatInt(rand.Int63(), 10))
 	port := rand.Intn(20000) + 30000
-	file, err := New(&obj, path, port)
+	file, err := New(&obj, path, NewPortLocker(port))
 	if err != nil {
 		t.Fatalf("new %v", err)
 	}
@@ -32,7 +32,7 @@ func TestGobFile(t *testing.T) {
 	file.Close()
 
 	var obj2 Object
-	file, err = New(&obj2, path, port)
+	file, err = New(&obj2, path, NewPortLocker(port))
 	if err != nil {
 		t.Fatalf("new %v", err)
 	}

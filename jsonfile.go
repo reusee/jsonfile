@@ -2,11 +2,12 @@ package jsonfile
 
 import (
 	"bytes"
+	crand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
-	"net"
 	"os"
 	"reflect"
 	"strconv"
@@ -15,17 +16,19 @@ import (
 )
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
+	var seed int64
+	binary.Read(crand.Reader, binary.LittleEndian, &seed)
+	rand.Seed(seed)
 }
 
 type File struct {
-	Obj      interface{}
-	portLock net.Listener
-	cbs      chan func()
-	path     string
+	Obj    interface{}
+	locker sync.Locker
+	cbs    chan func()
+	path   string
 }
 
-func New(obj interface{}, path string, lockPort int) (*File, error) {
+func New(obj interface{}, path string, locker sync.Locker) (*File, error) {
 	// check object
 	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
 		return nil, errors.New("object must be a pointer")
@@ -33,17 +36,23 @@ func New(obj interface{}, path string, lockPort int) (*File, error) {
 
 	// init
 	file := &File{
-		Obj:  obj,
-		cbs:  make(chan func()),
-		path: path,
+		Obj:    obj,
+		locker: locker,
+		cbs:    make(chan func()),
+		path:   path,
 	}
 
 	// try lock
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", lockPort))
-	if err != nil {
-		return nil, err
+	done := make(chan struct{})
+	go func() {
+		locker.Lock()
+		close(done)
+	}()
+	select {
+	case <-time.NewTimer(time.Second * 1).C:
+		return nil, fmt.Errorf("lock fail")
+	case <-done:
 	}
-	file.portLock = ln
 
 	// try load from file
 	dbFile, err := os.Open(path)
@@ -107,5 +116,5 @@ func (f *File) Save() (err error) {
 
 func (f *File) Close() {
 	close(f.cbs)
-	f.portLock.Close()
+	f.locker.Unlock()
 }
